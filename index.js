@@ -334,17 +334,17 @@ app.post("/api/posts/:id/dislike", protect, async (req, res) => {
 app.get("/api/add-reporter", async (req, res) => {
   try {
     // Default Reporter Details
-    const reporterEmail = "ranjan@example.com";
+    const reporterEmail = "dibesh@example.com";
     const existingReporter = await User.findOne({ email: reporterEmail });
 
     if (existingReporter) {
       return res.json({ message: "Reporter already exists", reporter: existingReporter });
     }
 
-    const hashedPassword = await bcrypt.hash("ranjan1234", 10);
+    const hashedPassword = await bcrypt.hash("dibesh1234", 10);
 
     const reporter = await User.create({
-      name: "Ranjan",
+      name: "Dibesh",
       email: reporterEmail,
       password: hashedPassword,
       role: "reporter",
