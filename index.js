@@ -356,6 +356,22 @@ app.get("/api/add-reporter", async (req, res) => {
   }
 });
 
+/* ================== PROFILE ROUTE ================== */
+
+// Get current logged-in user profile
+app.get("/api/users/profile", protect, async (req, res) => {
+  try {
+    // Fetch user from DB to ensure latest info
+    const user = await User.findById(req.user.id).select("-password"); // exclude password
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+
 
 /* ================== START SERVER ================== */
 const PORT = process.env.PORT || 5000;
