@@ -11,15 +11,14 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ✅ MongoDB Connection
+/* ================== MONGODB CONNECTION ================== */
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected"))
   .catch((err) => console.log("❌ DB Error:", err));
 
 /* ================== MODELS ================== */
-
-// ✅ User Schema
+// User Schema
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
@@ -27,11 +26,11 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true },
     role: { type: String, default: "customer" }, // customer | reporter
   },
-  { versionKey: false, collection : "newsUser" }
+  { versionKey: false, collection: "newsUser" }
 );
 const User = mongoose.model("User", userSchema);
 
-// ✅ Post Schema
+// Post Schema
 const postSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -43,7 +42,6 @@ const postSchema = new mongoose.Schema(
     likedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     dislikedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 
-    // ✅ Embedded comments
     comments: {
       type: [
         {
@@ -61,7 +59,7 @@ const Post = mongoose.model("Post", postSchema);
 
 /* ================== MIDDLEWARE ================== */
 
-// ✅ Auth Middleware
+// Auth Middleware
 const protect = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "No token provided" });
@@ -75,15 +73,29 @@ const protect = (req, res, next) => {
   }
 };
 
-/* ================== AUTH ROUTES ================== */
+// Reporter Only Middleware
+const reporterOnly = (req, res, next) => {
+  if (req.user.role !== "reporter") {
+    return res.status(403).json({ message: "Only reporters can access this route" });
+  }
+  next();
+};
 
+// Customer Only Middleware
+const customerOnly = (req, res, next) => {
+  if (req.user.role !== "customer") {
+    return res.status(403).json({ message: "Only customers can access this route" });
+  }
+  next();
+};
+
+/* ================== AUTH ROUTES ================== */
 // Register
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { name, email, password } = req.body;
     const userExists = await User.findOne({ email });
-    if (userExists)
-      return res.status(400).json({ message: "User already exists" });
+    if (userExists) return res.status(400).json({ message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     await User.create({ name, email, password: hashedPassword });
@@ -102,8 +114,7 @@ app.post("/api/auth/login", async (req, res) => {
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res.status(400).json({ message: "Invalid credentials" });
+    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
     const token = jwt.sign(
       { id: user._id, role: user.role, name: user.name, email: user.email },
@@ -113,12 +124,7 @@ app.post("/api/auth/login", async (req, res) => {
 
     res.json({
       token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role },
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -140,7 +146,7 @@ app.get("/api/posts", async (req, res) => {
 });
 
 // Get My Posts (Reporter Only)
-app.get("/api/posts/my-posts", protect, async (req, res) => {
+app.get("/api/posts/my-posts", protect, reporterOnly, async (req, res) => {
   try {
     const posts = await Post.find({ author: req.user.id })
       .populate("author", "name")
@@ -151,12 +157,9 @@ app.get("/api/posts/my-posts", protect, async (req, res) => {
   }
 });
 
-// Create Post
-app.post("/api/posts", protect, async (req, res) => {
+// Create Post (Reporter Only)
+app.post("/api/posts", protect, reporterOnly, async (req, res) => {
   try {
-    if (req.user.role !== "reporter")
-      return res.status(403).json({ message: "Only reporters can create posts" });
-
     const { title, description } = req.body;
     const post = await Post.create({ title, description, author: req.user.id });
     res.status(201).json(post);
@@ -165,8 +168,8 @@ app.post("/api/posts", protect, async (req, res) => {
   }
 });
 
-// Update Post
-app.put("/api/posts/:id", protect, async (req, res) => {
+// Update Post (Reporter Only)
+app.put("/api/posts/:id", protect, reporterOnly, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
@@ -183,8 +186,8 @@ app.put("/api/posts/:id", protect, async (req, res) => {
   }
 });
 
-// Delete Post
-app.delete("/api/posts/:id", protect, async (req, res) => {
+// Delete Post (Reporter Only)
+app.delete("/api/posts/:id", protect, reporterOnly, async (req, res) => {
   try {
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
@@ -198,14 +201,11 @@ app.delete("/api/posts/:id", protect, async (req, res) => {
   }
 });
 
-/* ================== COMMENT ROUTES ================== */
+/* ================== COMMENT ROUTES (Customer Only) ================== */
 
-// Add a comment (already present)
-app.post("/api/posts/:id/comments", protect, async (req, res) => {
+// Add comment
+app.post("/api/posts/:id/comments", protect, customerOnly, async (req, res) => {
   try {
-    if (req.user.role !== "customer")
-      return res.status(403).json({ message: "Only customers can comment" });
-
     const { text } = req.body;
     if (!text) return res.status(400).json({ message: "Comment text required" });
 
@@ -214,7 +214,6 @@ app.post("/api/posts/:id/comments", protect, async (req, res) => {
 
     post.comments.push({ user: req.user.id, text });
     await post.save();
-
     await post.populate("comments.user", "name");
     res.json(post);
   } catch (err) {
@@ -222,8 +221,8 @@ app.post("/api/posts/:id/comments", protect, async (req, res) => {
   }
 });
 
-// Edit a comment
-app.put("/api/posts/:postId/comments/:commentId", protect, async (req, res) => {
+// Edit comment
+app.put("/api/posts/:postId/comments/:commentId", protect, customerOnly, async (req, res) => {
   try {
     const { text } = req.body;
     const post = await Post.findById(req.params.postId).populate("comments.user", "name");
@@ -231,49 +230,39 @@ app.put("/api/posts/:postId/comments/:commentId", protect, async (req, res) => {
 
     const comment = post.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ message: "Comment not found" });
-
     if (comment.user._id.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
     comment.text = text;
     await post.save();
-
     res.json(post);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Delete a comment
-app.delete("/api/posts/:postId/comments/:commentId", protect, async (req, res) => {
+// Delete comment
+app.delete("/api/posts/:postId/comments/:commentId", protect, customerOnly, async (req, res) => {
   try {
     const post = await Post.findById(req.params.postId).populate("comments.user", "name");
     if (!post) return res.status(404).json({ message: "Post not found" });
 
     const comment = post.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ message: "Comment not found" });
-
     if (comment.user._id.toString() !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
     comment.deleteOne();
     await post.save();
-
     res.json(post);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-
-/* ================== LIKE / DISLIKE ROUTES ================== */
-
-// Like a post
-app.post("/api/posts/:id/like", protect, async (req, res) => {
+/* ================== LIKE / DISLIKE (Customer Only) ================== */
+app.post("/api/posts/:id/like", protect, customerOnly, async (req, res) => {
   try {
-    if (req.user.role !== "customer")
-      return res.status(403).json({ message: "Only customers can like" });
-
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
@@ -299,12 +288,8 @@ app.post("/api/posts/:id/like", protect, async (req, res) => {
   }
 });
 
-// Dislike a post
-app.post("/api/posts/:id/dislike", protect, async (req, res) => {
+app.post("/api/posts/:id/dislike", protect, customerOnly, async (req, res) => {
   try {
-    if (req.user.role !== "customer")
-      return res.status(403).json({ message: "Only customers can dislike" });
-
     const post = await Post.findById(req.params.id);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
@@ -330,19 +315,15 @@ app.post("/api/posts/:id/dislike", protect, async (req, res) => {
   }
 });
 
-// ✅ Create Reporter (for testing purpose)
+/* ================== CREATE TEST REPORTER ================== */
 app.get("/api/add-reporter", async (req, res) => {
   try {
-    // Default Reporter Details
     const reporterEmail = "dibesh@example.com";
     const existingReporter = await User.findOne({ email: reporterEmail });
-
-    if (existingReporter) {
+    if (existingReporter)
       return res.json({ message: "Reporter already exists", reporter: existingReporter });
-    }
 
     const hashedPassword = await bcrypt.hash("dibesh1234", 10);
-
     const reporter = await User.create({
       name: "Dibesh",
       email: reporterEmail,
@@ -356,23 +337,8 @@ app.get("/api/add-reporter", async (req, res) => {
   }
 });
 
-/* ================== PROFILE ROUTE ================== */
-
-// Get current logged-in user profile
+/* ================== PROFILE ================== */
 app.get("/api/users/profile", protect, async (req, res) => {
-  try {
-    // Fetch user from DB to ensure latest info
-    const user = await User.findById(req.user.id).select("-password"); // exclude password
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-
-// Home Page 
-app.get("/api/users/home", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -383,11 +349,6 @@ app.get("/api/users/home", protect, async (req, res) => {
   }
 });
 
-
-
-
 /* ================== START SERVER ================== */
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
