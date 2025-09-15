@@ -126,30 +126,30 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 /* ================== POST ROUTES ================== */
-
-// Get All Posts (Public)
+// ✅ Get All Posts
 app.get("/api/posts", async (req, res) => {
   try {
     const posts = await Post.find()
-      .populate("author", "name")
-      .populate("comments.user", "name");
+      .populate("author", "_id name") // ✅ author ka _id bhi bhejo
+      .populate("comments.user", "_id name"); // ✅ comments ke user ke _id + name force include
     res.json(posts);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// Get My Posts (Reporter Only)
+// ✅ Get My Posts
 app.get("/api/posts/my-posts", protect, async (req, res) => {
   try {
     const posts = await Post.find({ author: req.user.id })
-      .populate("author", "name")
-      .populate("comments.user", "name");
+      .populate("author", "_id name")
+      .populate("comments.user", "_id name");
     res.json(posts);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // Create Post
 app.post("/api/posts", protect, async (req, res) => {
@@ -200,70 +200,76 @@ app.delete("/api/posts/:id", protect, async (req, res) => {
 
 /* ================== COMMENT ROUTES ================== */
 
-// Add a comment (already present)
-app.post("/api/posts/:id/comments", protect, async (req, res) => {
+// ✅ Add Comment
+app.post("/api/posts/:postId/comments", protect, async (req, res) => {
+  const { text } = req.body;
   try {
-    if (req.user.role !== "customer")
-      return res.status(403).json({ message: "Only customers can comment" });
-
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ message: "Comment text required" });
-
-    const post = await Post.findById(req.params.id);
+    const post = await Post.findById(req.params.postId);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
-    post.comments.push({ user: req.user.id, text });
+    post.comments.push({ text, user: req.user.id });
     await post.save();
 
-    await post.populate("comments.user", "name");
-    res.json(post);
+    await post.populate("comments.user", "_id name"); // ✅ populate user details
+    res.json({ comments: post.comments }); // ✅ send only comments
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// Edit a comment
+// ✅ Edit Comment
 app.put("/api/posts/:postId/comments/:commentId", protect, async (req, res) => {
+  const { text } = req.body;
   try {
-    const { text } = req.body;
-    const post = await Post.findById(req.params.postId).populate("comments.user", "name");
+    const post = await Post.findById(req.params.postId);
     if (!post) return res.status(404).json({ message: "Post not found" });
 
     const comment = post.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ message: "Comment not found" });
 
-    if (comment.user._id.toString() !== req.user.id)
+    const commentUserId =
+      comment.user?._id?.toString() || comment.user?.toString();
+    if (commentUserId !== req.user.id)
       return res.status(403).json({ message: "Not authorized" });
 
     comment.text = text;
     await post.save();
 
-    res.json(post);
+    await post.populate("comments.user", "_id name");
+    res.json({ comments: post.comments });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// Delete a comment
-app.delete("/api/posts/:postId/comments/:commentId", protect, async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.postId).populate("comments.user", "name");
-    if (!post) return res.status(404).json({ message: "Post not found" });
+// ✅ Delete Comment
+app.delete(
+  "/api/posts/:postId/comments/:commentId",
+  protect,
+  async (req, res) => {
+    try {
+      const post = await Post.findById(req.params.postId);
+      if (!post) return res.status(404).json({ message: "Post not found" });
 
-    const comment = post.comments.id(req.params.commentId);
-    if (!comment) return res.status(404).json({ message: "Comment not found" });
+      const comment = post.comments.id(req.params.commentId);
+      if (!comment) return res.status(404).json({ message: "Comment not found" });
 
-    if (comment.user._id.toString() !== req.user.id)
-      return res.status(403).json({ message: "Not authorized" });
+      const commentUserId =
+        comment.user?._id?.toString() || comment.user?.toString();
+      if (commentUserId !== req.user.id)
+        return res.status(403).json({ message: "Not authorized" });
 
-    comment.deleteOne();
-    await post.save();
+      comment.remove();
+      await post.save();
 
-    res.json(post);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+      await post.populate("comments.user", "_id name");
+      res.json({ comments: post.comments });
+    } catch (err) {
+      res.status(500).json({ message: "Server error" });
+    }
   }
-});
+);
+
 
 
 /* ================== LIKE / DISLIKE ROUTES ================== */
