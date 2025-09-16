@@ -122,27 +122,37 @@ app.post("/api/auth/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    res.json({
-      token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role },
-    });
+    res.json({ token });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
-// Home Page 
-app.get("/api/users/home", protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
 
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+// /* ================== HOME ================== */
+// app.get("/api/users/home", protect, async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.id).select("-password");
+//     if (!user) return res.status(404).json({ message: "User not found" });
 
+//     res.json(user);
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
+
+// /* ================== PROFILE ================== */
+// app.get("/api/users/profile", protect, async (req, res) => {
+//   try {
+//     const user = await User.findById(req.user.id).select("-password");
+//     if (!user) return res.status(404).json({ message: "User not found" });
+
+//     res.json(user);
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
 
 /* ================== POST ROUTES ================== */
 
@@ -350,17 +360,7 @@ app.get("/api/add-reporter", async (req, res) => {
   }
 });
 
-/* ================== PROFILE ================== */
-app.get("/api/users/profile", protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select("-password");
-    if (!user) return res.status(404).json({ message: "User not found" });
 
-    res.json(user);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
 /* ================== START SERVER ================== */
 const PORT = process.env.PORT || 5000;
